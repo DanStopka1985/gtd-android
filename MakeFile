@@ -1,0 +1,29 @@
+.PHONY: build-android clean
+
+APP_NAME := gtd-android
+BUNDLE_ID := com.gtdandroid.app
+
+build-android:
+	@echo "Building Android app..."
+	fyne package -os android -appID $(BUNDLE_ID) -name $(APP_NAME) -icon icon.png
+
+	@echo "Build complete: $(APP_NAME).apk"
+
+build-android-release:
+	@echo "Building Android release..."
+	fyne package -os android -appID $(BUNDLE_ID) -name $(APP_NAME) -icon icon.png -release
+
+	@echo "Release build complete"
+
+install:
+	adb install -r $(APP_NAME).apk
+
+clean:
+	rm -f $(APP_NAME).apk
+	rm -rf $(APP_NAME)
+
+run:
+	fyne install -os android
+
+dev:
+	fyne serve
