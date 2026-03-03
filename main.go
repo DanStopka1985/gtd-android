@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -9,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -38,18 +40,15 @@ func main() {
 
 	data := &Data{}
 
-	// Читаем существующие данные
 	if file, err := os.ReadFile(dataFile); err == nil {
 		json.Unmarshal(file, data)
 	} else {
-		// Тестовые данные
 		data.Inbox = []Task{
 			{Title: "Купить продукты", Done: false},
 			{Title: "Сделать зарядку", Done: false},
 		}
 	}
 
-	// Функция сохранения
 	saveData := func() {
 		jsonData, _ := json.MarshalIndent(data, "", "  ")
 		os.WriteFile(dataFile, jsonData, 0644)
@@ -57,10 +56,25 @@ func main() {
 
 	currentView := "inbox"
 
-	// Элементы интерфейса
+	// Заголовок
 	title := widget.NewLabelWithStyle("GTD Organizer", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
-	// Список задач
+	// Счетчик задач
+	counter := widget.NewLabel("")
+	updateCounter := func() {
+		switch currentView {
+		case "inbox":
+			counter.SetText(fmt.Sprintf("📥 %d задач", len(data.Inbox)))
+		case "projects":
+			counter.SetText(fmt.Sprintf("📁 %d проектов", len(data.Projects)))
+		case "completed":
+			counter.SetText(fmt.Sprintf("✅ %d выполнено", len(data.Completed)))
+		case "trash":
+			counter.SetText(fmt.Sprintf("🗑 %d в корзине", len(data.Trash)))
+		}
+	}
+
+	// Список задач с иконками
 	taskList := widget.NewList(
 		func() int {
 			switch currentView {
@@ -77,34 +91,46 @@ func main() {
 			}
 		},
 		func() fyne.CanvasObject {
-			return widget.NewLabel("")
+			return container.NewHBox(
+				widget.NewIcon(nil),
+				widget.NewLabel(""),
+			)
 		},
 		func(i int, o fyne.CanvasObject) {
+			box := o.(*fyne.Container)
+			icon := box.Objects[0].(*widget.Icon)
+			label := box.Objects[1].(*widget.Label)
+
 			switch currentView {
 			case "inbox":
-				o.(*widget.Label).SetText(data.Inbox[i].Title)
+				icon.SetResource(theme.MailComposeIcon())
+				label.SetText(data.Inbox[i].Title)
 			case "projects":
-				o.(*widget.Label).SetText(data.Projects[i].Title)
+				icon.SetResource(theme.FolderIcon())
+				label.SetText(data.Projects[i].Title)
 			case "completed":
-				o.(*widget.Label).SetText(data.Completed[i].Title)
+				icon.SetResource(theme.ConfirmIcon())
+				label.SetText(data.Completed[i].Title)
 			case "trash":
-				o.(*widget.Label).SetText(data.Trash[i].Title)
+				icon.SetResource(theme.DeleteIcon())
+				label.SetText(data.Trash[i].Title)
 			}
 		},
 	)
 
-	// Обработка выбора задачи
 	taskList.OnSelected = func(id widget.ListItemID) {
 		switch currentView {
 		case "inbox":
 			showInboxActions(&data.Inbox[id], data, id, myWindow, func() {
 				saveData()
 				taskList.Refresh()
+				updateCounter()
 			})
 		case "projects":
 			showProjectActions(&data.Projects[id], data, id, myWindow, func() {
 				saveData()
 				taskList.Refresh()
+				updateCounter()
 			})
 		}
 		taskList.UnselectAll()
@@ -112,81 +138,98 @@ func main() {
 
 	// Поле ввода
 	input := widget.NewEntry()
-	input.SetPlaceHolder("Новая задача...")
+	input.SetPlaceHolder("➕ Новая задача...")
 	input.OnSubmitted = func(text string) {
 		if text != "" && currentView == "inbox" {
 			data.Inbox = append(data.Inbox, Task{Title: text, Done: false})
 			saveData()
 			input.SetText("")
 			taskList.Refresh()
+			updateCounter()
 		}
 	}
 
-	addBtn := widget.NewButton("Добавить", func() {
+	addBtn := widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
 		if input.Text != "" && currentView == "inbox" {
 			data.Inbox = append(data.Inbox, Task{Title: input.Text, Done: false})
 			saveData()
 			input.SetText("")
 			taskList.Refresh()
+			updateCounter()
 		}
 	})
 
 	inputRow := container.NewBorder(nil, nil, nil, addBtn, input)
 
 	// Кнопки навигации
-	inboxBtn := widget.NewButton("Входящие", func() {
+	inboxBtn := widget.NewButtonWithIcon("Входящие", theme.MailComposeIcon(), func() {
 		currentView = "inbox"
 		taskList.Refresh()
 		input.Show()
 		addBtn.Show()
+		updateCounter()
 	})
 
-	projectsBtn := widget.NewButton("Проекты", func() {
+	projectsBtn := widget.NewButtonWithIcon("Проекты", theme.FolderIcon(), func() {
 		currentView = "projects"
 		taskList.Refresh()
 		input.Hide()
 		addBtn.Hide()
+		updateCounter()
 	})
 
-	completedBtn := widget.NewButton("Выполненные", func() {
+	completedBtn := widget.NewButtonWithIcon("Выполненные", theme.ConfirmIcon(), func() {
 		currentView = "completed"
 		taskList.Refresh()
 		input.Hide()
 		addBtn.Hide()
+		updateCounter()
 	})
 
-	trashBtn := widget.NewButton("Корзина", func() {
+	trashBtn := widget.NewButtonWithIcon("Корзина", theme.DeleteIcon(), func() {
 		currentView = "trash"
 		taskList.Refresh()
 		input.Hide()
 		addBtn.Hide()
+		updateCounter()
 	})
 
 	navBar := container.NewGridWithColumns(4, inboxBtn, projectsBtn, completedBtn, trashBtn)
 
-	// Собираем всё вместе
+	// Верхняя панель
+	header := container.NewVBox(
+		title,
+		container.NewHBox(
+			widget.NewLabel(""),
+			counter,
+			widget.NewLabel(""),
+		),
+	)
+
 	content := container.NewBorder(
-		container.NewVBox(title, navBar, inputRow),
+		container.NewVBox(header, navBar, inputRow),
 		nil, nil, nil,
 		container.NewScroll(taskList),
 	)
 
+	updateCounter()
 	myWindow.SetContent(content)
 	myWindow.ShowAndRun()
 }
 
+// Все функции действий остаются без изменений
 func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
-		widget.NewButton("📁 В проект", func() {
+		widget.NewButtonWithIcon("📁 В проект", theme.FolderIcon(), func() {
 			showProjectSelect(task, data, index, window, onRefresh)
 		}),
-		widget.NewButton("✅ Выполнено", func() {
+		widget.NewButtonWithIcon("✅ Выполнено", theme.ConfirmIcon(), func() {
 			task.Done = true
 			data.Completed = append(data.Completed, *task)
 			data.Inbox = append(data.Inbox[:index], data.Inbox[index+1:]...)
 			onRefresh()
 		}),
-		widget.NewButton("🗑 Удалить", func() {
+		widget.NewButtonWithIcon("🗑 Удалить", theme.DeleteIcon(), func() {
 			data.Trash = append(data.Trash, *task)
 			data.Inbox = append(data.Inbox[:index], data.Inbox[index+1:]...)
 			onRefresh()
@@ -198,16 +241,16 @@ func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onR
 
 func showProjectActions(project *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
-		widget.NewButton("📋 Подзадачи", func() {
+		widget.NewButtonWithIcon("📋 Подзадачи", theme.ListIcon(), func() {
 			showSubtasks(project, window, onRefresh)
 		}),
-		widget.NewButton("✅ Выполнено", func() {
+		widget.NewButtonWithIcon("✅ Выполнено", theme.ConfirmIcon(), func() {
 			project.Done = true
 			data.Completed = append(data.Completed, *project)
 			data.Projects = append(data.Projects[:index], data.Projects[index+1:]...)
 			onRefresh()
 		}),
-		widget.NewButton("🗑 Удалить", func() {
+		widget.NewButtonWithIcon("🗑 Удалить", theme.DeleteIcon(), func() {
 			data.Trash = append(data.Trash, *project)
 			data.Projects = append(data.Projects[:index], data.Projects[index+1:]...)
 			onRefresh()
@@ -223,7 +266,6 @@ func showProjectSelect(task *Task, data *Data, index int, window fyne.Window, on
 		projectNames = append(projectNames, p.Title)
 	}
 
-	// Добавляем опцию создания нового проекта
 	projectNames = append([]string{"✨ Создать новый проект"}, projectNames...)
 
 	selectWidget := widget.NewSelect(projectNames, nil)
@@ -231,11 +273,10 @@ func showProjectSelect(task *Task, data *Data, index int, window fyne.Window, on
 	content := container.NewVBox(
 		widget.NewLabel("Выберите проект:"),
 		selectWidget,
-		widget.NewButton("Переместить", func() {
+		widget.NewButtonWithIcon("Переместить", theme.MoveDownIcon(), func() {
 			selected := selectWidget.Selected
 
 			if selected == "✨ Создать новый проект" {
-				// Создаем новый проект с названием задачи
 				newProject := Task{
 					Title:    task.Title,
 					Done:     false,
@@ -274,13 +315,12 @@ func showSubtasks(project *Task, window fyne.Window, onRefresh func()) {
 	}
 
 	entry := widget.NewEntry()
-	entry.SetPlaceHolder("Новая подзадача")
+	entry.SetPlaceHolder("➕ Новая подзадача")
 
-	addBtn := widget.NewButton("Добавить", func() {
+	addBtn := widget.NewButtonWithIcon("Добавить", theme.ContentAddIcon(), func() {
 		if entry.Text != "" {
 			project.Subtasks = append(project.Subtasks, Task{Title: entry.Text, Done: false})
 			onRefresh()
-			// Просто закрываем текущий диалог - пользователь может открыть снова
 		}
 	})
 
