@@ -13,8 +13,9 @@ import (
 )
 
 type Task struct {
-	Title string
-	Done  bool
+	Title    string
+	Done     bool
+	Subtasks []Task
 }
 
 type Data struct {
@@ -27,6 +28,7 @@ type Data struct {
 func main() {
 	myApp := app.New()
 	myWindow := myApp.NewWindow("GTD Organizer")
+	myWindow.Resize(fyne.NewSize(400, 600))
 
 	// Загружаем данные
 	dataDir, _ := os.UserCacheDir()
@@ -95,7 +97,12 @@ func main() {
 	taskList.OnSelected = func(id widget.ListItemID) {
 		switch currentView {
 		case "inbox":
-			showTaskActions(&data.Inbox[id], data, "inbox", id, myWindow, func() {
+			showInboxActions(&data.Inbox[id], data, id, myWindow, func() {
+				saveData()
+				taskList.Refresh()
+			})
+		case "projects":
+			showProjectActions(&data.Projects[id], data, id, myWindow, func() {
 				saveData()
 				taskList.Refresh()
 			})
@@ -165,12 +172,14 @@ func main() {
 	)
 
 	myWindow.SetContent(content)
-	myWindow.Resize(fyne.NewSize(400, 600))
 	myWindow.ShowAndRun()
 }
 
-func showTaskActions(task *Task, data *Data, view string, index int, window fyne.Window, onRefresh func()) {
+func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
+		widget.NewButton("📁 В проект", func() {
+			showProjectSelect(task, data, index, window, onRefresh)
+		}),
 		widget.NewButton("✅ Выполнено", func() {
 			task.Done = true
 			data.Completed = append(data.Completed, *task)
@@ -185,4 +194,97 @@ func showTaskActions(task *Task, data *Data, view string, index int, window fyne
 	)
 
 	dialog.ShowCustom("Действия", "Закрыть", actions, window)
+}
+
+func showProjectActions(project *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
+	actions := container.NewVBox(
+		widget.NewButton("📋 Подзадачи", func() {
+			showSubtasks(project, window, onRefresh)
+		}),
+		widget.NewButton("✅ Выполнено", func() {
+			project.Done = true
+			data.Completed = append(data.Completed, *project)
+			data.Projects = append(data.Projects[:index], data.Projects[index+1:]...)
+			onRefresh()
+		}),
+		widget.NewButton("🗑 Удалить", func() {
+			data.Trash = append(data.Trash, *project)
+			data.Projects = append(data.Projects[:index], data.Projects[index+1:]...)
+			onRefresh()
+		}),
+	)
+
+	dialog.ShowCustom("Действия", "Закрыть", actions, window)
+}
+
+func showProjectSelect(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
+	var projectNames []string
+	for _, p := range data.Projects {
+		projectNames = append(projectNames, p.Title)
+	}
+
+	// Добавляем опцию создания нового проекта
+	projectNames = append([]string{"✨ Создать новый проект"}, projectNames...)
+
+	selectWidget := widget.NewSelect(projectNames, nil)
+
+	content := container.NewVBox(
+		widget.NewLabel("Выберите проект:"),
+		selectWidget,
+		widget.NewButton("Переместить", func() {
+			selected := selectWidget.Selected
+
+			if selected == "✨ Создать новый проект" {
+				// Создаем новый проект с названием задачи
+				newProject := Task{
+					Title:    task.Title,
+					Done:     false,
+					Subtasks: []Task{*task},
+				}
+				data.Projects = append(data.Projects, newProject)
+				data.Inbox = append(data.Inbox[:index], data.Inbox[index+1:]...)
+				onRefresh()
+			} else {
+				for i, p := range data.Projects {
+					if p.Title == selected {
+						data.Projects[i].Subtasks = append(data.Projects[i].Subtasks, *task)
+						data.Inbox = append(data.Inbox[:index], data.Inbox[index+1:]...)
+						onRefresh()
+						break
+					}
+				}
+			}
+		}),
+	)
+
+	dialog.ShowCustom("Переместить в проект", "Отмена", content, window)
+}
+
+func showSubtasks(project *Task, window fyne.Window, onRefresh func()) {
+	content := container.NewVBox(
+		widget.NewLabelWithStyle(project.Title, fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+	)
+
+	if len(project.Subtasks) == 0 {
+		content.Add(widget.NewLabel("Нет подзадач"))
+	} else {
+		for _, subtask := range project.Subtasks {
+			content.Add(widget.NewLabel("  • " + subtask.Title))
+		}
+	}
+
+	entry := widget.NewEntry()
+	entry.SetPlaceHolder("Новая подзадача")
+
+	addBtn := widget.NewButton("Добавить", func() {
+		if entry.Text != "" {
+			project.Subtasks = append(project.Subtasks, Task{Title: entry.Text, Done: false})
+			onRefresh()
+			// Просто закрываем текущий диалог - пользователь может открыть снова
+		}
+	})
+
+	content.Add(container.NewBorder(nil, nil, nil, addBtn, entry))
+
+	dialog.ShowCustom("Подзадачи", "Закрыть", content, window)
 }
