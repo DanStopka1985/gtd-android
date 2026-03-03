@@ -1,13 +1,15 @@
 package ui
 
 import (
-	"strings"
+	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"gtd-android/gtd"
 )
 
 type BaseScreen struct {
@@ -17,70 +19,62 @@ type BaseScreen struct {
 	tasks   []*gtd.Task
 }
 
-func (s *BaseScreen) refreshList() {
-	// ����� ��������������
-}
+func (s *BaseScreen) refreshList() {}
 
 func (s *BaseScreen) showTaskActions(task *gtd.Task) {
-	popup := widget.NewPopUp(
-		container.NewVBox(
-			widget.NewButton("�������������", func() {
-				s.showEditDialog(task)
-			}),
-			widget.NewButton("���������������", func() {
-				s.showDecomposeDialog(task)
-			}),
-			widget.NewButton("�������", func() {
-				s.service.MoveToTrash(task.ID)
-				s.refreshList()
-			}),
-			widget.NewButton("������", func() {
-				popup.Hide()
-			}),
-		),
-		s.window.Canvas(),
+	log.Println("Showing actions for task:", task.Title)
+
+	content := container.NewVBox(
+		widget.NewButton("✏️ Редактировать", func() {
+			s.showEditDialog(task)
+		}),
+		widget.NewButton("📋 Декомпозировать", func() {
+			s.showDecomposeDialog(task)
+		}),
+		widget.NewButton("🗑 Удалить", func() {
+			s.service.MoveToTrash(task.ID)
+			s.refreshList()
+		}),
 	)
 
-	popup.ShowAtPosition(fyne.NewPos(100, 200))
+	dialog.ShowCustom("Действия", "Закрыть", content, s.window)
 }
 
 func (s *BaseScreen) showEditDialog(task *gtd.Task) {
-	entry := widget.NewMultiLineEntry()
+	entry := widget.NewEntry()
 	entry.SetText(task.Title)
 
-	dialog.ShowCustomConfirm("������������� ������", "���������", "������",
-		container.NewVBox(
-			widget.NewLabel("��������:"),
-			entry,
-		),
-		func(confirm bool) {
-			if confirm && entry.Text != "" {
+	content := container.NewVBox(
+		widget.NewLabel("Новое название:"),
+		entry,
+		widget.NewButton("Сохранить", func() {
+			if entry.Text != "" {
 				task.Title = entry.Text
 				s.service.UpdateTask(task)
 				s.refreshList()
 			}
-		},
-		s.window,
+		}),
 	)
+
+	dialog.ShowCustom("Редактировать", "Отмена", content, s.window)
 }
 
 func (s *BaseScreen) showDecomposeDialog(parent *gtd.Task) {
 	entry := widget.NewEntry()
-	entry.SetPlaceHolder("�������� ���������")
+	entry.SetPlaceHolder("Название подзадачи")
 
-	dialog.ShowCustomConfirm("��������������� ������", "��������", "������",
-		container.NewVBox(
-			widget.NewLabel("����� ���������:"),
-			entry,
-		),
-		func(confirm bool) {
-			if confirm && entry.Text != "" {
+	content := container.NewVBox(
+		widget.NewLabel("Новая подзадача:"),
+		entry,
+		widget.NewButton("Добавить", func() {
+			if entry.Text != "" {
 				s.service.AddSubtask(parent.ID, entry.Text)
 				s.refreshList()
 			}
-		},
-		s.window,
+		}),
 	)
+
+	dialog.ShowCustom("Декомпозировать", "Отмена", content, s.window)
 }
 
 func (s *BaseScreen) createTaskList(items []*gtd.Task, onSelect func(id string)) *widget.List {
@@ -91,28 +85,35 @@ func (s *BaseScreen) createTaskList(items []*gtd.Task, onSelect func(id string))
 			return len(s.tasks)
 		},
 		func() fyne.CanvasObject {
+			// Максимально простой шаблон
 			return container.NewHBox(
 				widget.NewIcon(theme.DocumentIcon()),
 				widget.NewLabel("Task"),
-				widget.NewButtonWithIcon("", theme.MoreHorizIcon(), func() {}),
+				widget.NewButton("⋮", nil),
 			)
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			task := s.tasks[id]
-			box := obj.(*fyne.Container)
-			label := box.Objects[1].(*widget.Label)
-			label.SetText(task.Title)
+			if id < len(s.tasks) {
+				task := s.tasks[id]
+				box := obj.(*fyne.Container)
 
-			// ������ ��������
-			btn := box.Objects[2].(*widget.Button)
-			btn.OnTapped = func() {
-				s.showTaskActions(task)
+				// Обновляем label
+				if label, ok := box.Objects[1].(*widget.Label); ok {
+					label.SetText(task.Title)
+				}
+
+				// Обновляем кнопку
+				if btn, ok := box.Objects[2].(*widget.Button); ok {
+					btn.OnTapped = func() {
+						s.showTaskActions(task)
+					}
+				}
 			}
 		},
 	)
 
 	list.OnSelected = func(id widget.ListItemID) {
-		if onSelect != nil {
+		if onSelect != nil && id < len(s.tasks) {
 			onSelect(s.tasks[id].ID)
 		}
 		list.UnselectAll()

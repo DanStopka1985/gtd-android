@@ -4,7 +4,10 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"gtd-android/gtd"
 )
 
 type TrashScreen struct {
@@ -23,21 +26,19 @@ func NewTrashScreen(service *gtd.Service, window fyne.Window) fyne.CanvasObject 
 }
 
 func (s *TrashScreen) buildUI() fyne.CanvasObject {
-	// ������ ���������� ��������
-	restoreAllBtn := widget.NewButtonWithIcon("������������ ���", theme.ViewRestoreIcon(), func() {
+	restoreAllBtn := widget.NewButtonWithIcon("Восстановить все", theme.ViewRestoreIcon(), func() {
 		s.showRestoreAllDialog()
 	})
 
-	emptyBtn := widget.NewButtonWithIcon("�������� �������", theme.DeleteIcon(), func() {
+	emptyBtn := widget.NewButtonWithIcon("Очистить корзину", theme.DeleteIcon(), func() {
 		s.showEmptyTrashDialog()
 	})
 
-	// ������ ��������� �����
 	s.list = s.createTrashList()
 
 	return container.NewBorder(
 		container.NewHBox(
-			widget.NewLabel("�������"),
+			widget.NewLabel("Корзина"),
 			restoreAllBtn,
 			emptyBtn,
 		),
@@ -57,27 +58,27 @@ func (s *TrashScreen) createTrashList() *widget.List {
 			return container.NewHBox(
 				widget.NewIcon(theme.DeleteIcon()),
 				widget.NewLabel("Task"),
-				widget.NewButtonWithIcon("", theme.ViewRestoreIcon(), func() {}),
-				widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {}),
+				widget.NewButtonWithIcon("", theme.ViewRestoreIcon(), nil),
+				widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
 			)
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			task := tasks[id]
-			box := obj.(*fyne.Container)
-			label := box.Objects[1].(*widget.Label)
-			label.SetText(task.Title)
+			if id < len(tasks) {
+				task := tasks[id]
+				box := obj.(*fyne.Container)
+				label := box.Objects[1].(*widget.Label)
+				label.SetText(task.Title)
 
-			// ������ ��������������
-			restoreBtn := box.Objects[2].(*widget.Button)
-			restoreBtn.OnTapped = func() {
-				s.service.RestoreFromTrash(task.ID)
-				s.refreshList()
-			}
+				restoreBtn := box.Objects[2].(*widget.Button)
+				restoreBtn.OnTapped = func() {
+					s.service.RestoreFromTrash(task.ID)
+					s.refreshList()
+				}
 
-			// ������ �������������� ��������
-			deleteBtn := box.Objects[3].(*widget.Button)
-			deleteBtn.OnTapped = func() {
-				s.showDeleteConfirmDialog(task.ID)
+				deleteBtn := box.Objects[3].(*widget.Button)
+				deleteBtn.OnTapped = func() {
+					s.showDeleteConfirmDialog(task.ID)
+				}
 			}
 		},
 	)
@@ -91,8 +92,8 @@ func (s *TrashScreen) refreshList() {
 }
 
 func (s *TrashScreen) showRestoreAllDialog() {
-	dialog.ShowConfirm("������������ ���",
-		"������������ ��� ������ �� �������?",
+	dialog.ShowConfirm("Восстановить все",
+		"Восстановить все задачи из корзины?",
 		func(confirm bool) {
 			if confirm {
 				tasks := s.service.GetTasksByStatus(gtd.Trash)
@@ -107,8 +108,8 @@ func (s *TrashScreen) showRestoreAllDialog() {
 }
 
 func (s *TrashScreen) showEmptyTrashDialog() {
-	dialog.ShowConfirm("�������� �������",
-		"��� ������ ����� ������� ������������. ����������?",
+	dialog.ShowConfirm("Очистить корзину",
+		"Все задачи будут удалены безвозвратно. Продолжить?",
 		func(confirm bool) {
 			if confirm {
 				tasks := s.service.GetTasksByStatus(gtd.Trash)
@@ -123,8 +124,8 @@ func (s *TrashScreen) showEmptyTrashDialog() {
 }
 
 func (s *TrashScreen) showDeleteConfirmDialog(taskID string) {
-	dialog.ShowConfirm("������� ��������",
-		"������ ����� ������� ������������. ����������?",
+	dialog.ShowConfirm("Удалить навсегда",
+		"Задача будет удалена безвозвратно. Продолжить?",
 		func(confirm bool) {
 			if confirm {
 				s.service.DeletePermanently(taskID)

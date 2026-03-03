@@ -3,7 +3,10 @@ package ui
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"gtd-android/gtd"
 )
 
 type CompletedScreen struct {
@@ -22,8 +25,7 @@ func NewCompletedScreen(service *gtd.Service, window fyne.Window) fyne.CanvasObj
 }
 
 func (s *CompletedScreen) buildUI() fyne.CanvasObject {
-	// �������� ��� �����������
-	clearBtn := widget.NewButtonWithIcon("�������� ���", theme.DeleteIcon(), func() {
+	clearBtn := widget.NewButtonWithIcon("Очистить все", theme.DeleteIcon(), func() {
 		tasks := s.getTasks()
 		for _, task := range tasks {
 			s.service.DeletePermanently(task.ID)
@@ -31,12 +33,11 @@ func (s *CompletedScreen) buildUI() fyne.CanvasObject {
 		s.refreshList()
 	})
 
-	// ������ ����������� �����
 	s.list = s.createTaskList(s.getTasks(), nil)
 
 	return container.NewBorder(
 		container.NewHBox(
-			widget.NewLabel("����������� ������"),
+			widget.NewLabel("Выполненные задачи"),
 			clearBtn,
 		),
 		nil, nil, nil,
@@ -50,5 +51,7 @@ func (s *CompletedScreen) getTasks() []*gtd.Task {
 
 func (s *CompletedScreen) refreshList() {
 	s.tasks = s.getTasks()
-	s.list.Refresh()
+	if s.list != nil {
+		s.list.Refresh()
+	}
 }

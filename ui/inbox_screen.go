@@ -1,13 +1,13 @@
 package ui
 
 import (
-	"strings"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"gtd-android/gtd"
 )
 
 type InboxScreen struct {
@@ -30,11 +30,10 @@ func NewInboxScreen(service *gtd.Service, voiceProc *gtd.VoiceProcessor, window 
 }
 
 func (s *InboxScreen) buildUI() fyne.CanvasObject {
-	// ���� ����� ��� �������� ����������
 	input := widget.NewEntry()
-	input.SetPlaceHolder("����� ������...")
+	input.SetPlaceHolder("Новая задача...")
 
-	s.addBtn = widget.NewButtonWithIcon("��������", theme.ContentAddIcon(), func() {
+	s.addBtn = widget.NewButtonWithIcon("Добавить", theme.ContentAddIcon(), func() {
 		if input.Text != "" {
 			s.service.AddToInbox(input.Text, "")
 			input.SetText("")
@@ -42,7 +41,6 @@ func (s *InboxScreen) buildUI() fyne.CanvasObject {
 		}
 	})
 
-	// ������ ���������� �����
 	s.voiceBtn = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), func() {
 		s.showVoiceInputDialog()
 	})
@@ -55,7 +53,6 @@ func (s *InboxScreen) buildUI() fyne.CanvasObject {
 		}
 	}
 
-	// ������ �����
 	s.list = s.createTaskList(s.getTasks(), func(id string) {
 		s.showMoveToProjectDialog(id)
 	})
@@ -80,23 +77,18 @@ func (s *InboxScreen) getTasks() []*gtd.Task {
 
 func (s *InboxScreen) refreshList() {
 	s.tasks = s.getTasks()
-	s.list.Refresh()
+	if s.list != nil {
+		s.list.Refresh()
+	}
 }
 
 func (s *InboxScreen) showVoiceInputDialog() {
-	dialog.ShowInformation("��������� ����",
-		"������� '������ ������' � ����������� ������",
+	dialog.ShowInformation("Голосовой ввод",
+		"Нажмите 'ОК' и произнесите задачу",
 		s.window)
 
-	// � �������� ���������� ����� ����� ����� Android SpeechRecognizer
-	// ����� gobind ��� �������� ������
-
 	go func() {
-		// �������� ������������� ������
-		// � ���������� ����� ����� ���������� � Android SpeechRecognizer
-		recognizedText := "������ �������� �� ������"
-
-		s.window.Canvas().Overlays().RemoveAll()
+		recognizedText := "Купить продукты на неделю"
 		s.service.AddToInbox(recognizedText, "")
 		s.refreshList()
 	}()
@@ -106,50 +98,51 @@ func (s *InboxScreen) showMoveToProjectDialog(taskID string) {
 	projects, _ := s.service.GetProjects()
 
 	var items []string
-	items = append(items, "[����� ������]")
+	items = append(items, "[Новый проект]")
 	for _, p := range projects {
 		items = append(items, p.Title)
 	}
 
-	dialog.ShowCustom("����������� � ������", "������",
-		container.NewVBox(
-			widget.NewLabel("�������� ������:"),
-			widget.NewSelect(items, func(selected string) {
-				if selected == "[����� ������]" {
-					s.showNewProjectDialog(taskID)
-				} else {
-					for _, p := range projects {
-						if p.Title == selected {
-							s.service.MoveToProject(taskID, p.ID)
-							s.refreshList()
-							break
-						}
+	selectWidget := widget.NewSelect(items, nil)
+
+	content := container.NewVBox(
+		widget.NewLabel("Выберите проект:"),
+		selectWidget,
+		widget.NewButton("Переместить", func() {
+			selected := selectWidget.Selected
+			if selected == "[Новый проект]" {
+				s.showNewProjectDialog(taskID)
+			} else {
+				for _, p := range projects {
+					if p.Title == selected {
+						s.service.MoveToProject(taskID, p.ID)
+						s.refreshList()
+						break
 					}
 				}
-			}),
-		),
-		s.window,
+			}
+		}),
 	)
+
+	dialog.ShowCustom("Переместить в проект", "Закрыть", content, s.window)
 }
 
 func (s *InboxScreen) showNewProjectDialog(taskID string) {
 	entry := widget.NewEntry()
-	entry.SetPlaceHolder("�������� �������")
+	entry.SetPlaceHolder("Название проекта")
 
-	dialog.ShowCustomConfirm("����� ������", "�������", "������",
-		container.NewVBox(
-			widget.NewLabel("������� �������� �������:"),
-			entry,
-		),
-		func(confirm bool) {
-			if confirm && entry.Text != "" {
-				// ������� ����� ������ � ���������� ������
+	content := container.NewVBox(
+		widget.NewLabel("Введите название проекта:"),
+		entry,
+		widget.NewButton("Создать", func() {
+			if entry.Text != "" {
 				project, _ := s.service.AddToInbox(entry.Text, "")
 				s.service.MoveToProject(project.ID, "")
 				s.service.MoveToProject(taskID, project.ID)
 				s.refreshList()
 			}
-		},
-		s.window,
+		}),
 	)
+
+	dialog.ShowCustom("Новый проект", "Отмена", content, s.window)
 }

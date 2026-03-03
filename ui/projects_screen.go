@@ -5,7 +5,10 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"gtd-android/gtd"
 )
 
 type ProjectsScreen struct {
@@ -27,20 +30,16 @@ func NewProjectsScreen(service *gtd.Service, window fyne.Window) fyne.CanvasObje
 }
 
 func (s *ProjectsScreen) buildUI() fyne.CanvasObject {
-	// ������ �������� (����� �� ��������, ������ �� ��������)
 	s.projectList = s.createProjectList()
 
-	// ������ ���������� �������
-	addProjectBtn := widget.NewButtonWithIcon("����� ������", theme.ContentAddIcon(), func() {
+	addProjectBtn := widget.NewButtonWithIcon("Новый проект", theme.ContentAddIcon(), func() {
 		s.showNewProjectDialog()
 	})
 
-	// ������� ������ � �������
 	s.currentTasks = s.createTaskList([]*gtd.Task{}, func(id string) {
 		s.showTaskActionsInProject(id)
 	})
 
-	// ������ �������� ��� ��������
 	projectActions := container.NewHBox(
 		widget.NewButtonWithIcon("", theme.ConfirmIcon(), func() {
 			if s.selectedID != "" {
@@ -59,8 +58,7 @@ func (s *ProjectsScreen) buildUI() fyne.CanvasObject {
 		}),
 	)
 
-	// ���������� ���������
-	addSubtask := widget.NewButtonWithIcon("�������� ���������", theme.ContentAddIcon(), func() {
+	addSubtask := widget.NewButtonWithIcon("Добавить подзадачу", theme.ContentAddIcon(), func() {
 		if s.selectedID != "" {
 			s.showAddSubtaskDialog(s.selectedID)
 		}
@@ -75,7 +73,7 @@ func (s *ProjectsScreen) buildUI() fyne.CanvasObject {
 		nil, nil, nil,
 		container.NewBorder(
 			container.NewHBox(
-				widget.NewLabel("������ �������:"),
+				widget.NewLabel("Задачи проекта:"),
 				layout.NewSpacer(),
 				projectActions,
 			),
@@ -87,14 +85,14 @@ func (s *ProjectsScreen) buildUI() fyne.CanvasObject {
 
 	split := container.NewHSplit(
 		container.NewBorder(
-			widget.NewLabelWithStyle("�������", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("Проекты", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 			nil, nil, nil,
 			projectContent,
 		),
 		container.NewBorder(
-			widget.NewLabelWithStyle("������", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("Детали", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 			nil, nil, nil,
-			container.NewCenter(widget.NewLabel("�������� ������")),
+			container.NewCenter(widget.NewLabel("Выберите проект")),
 		),
 	)
 	split.Offset = 0.3
@@ -107,7 +105,7 @@ func (s *ProjectsScreen) createProjectList() *widget.List {
 
 	list := widget.NewList(
 		func() int {
-			return len(projects) + 1 // +1 ��� ���������
+			return len(projects) + 1
 		},
 		func() fyne.CanvasObject {
 			return container.NewHBox(
@@ -117,13 +115,15 @@ func (s *ProjectsScreen) createProjectList() *widget.List {
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			if id == 0 {
-				// ���������
 				label := obj.(*fyne.Container).Objects[1].(*widget.Label)
-				label.SetText("--- ��� ������� ---")
+				label.SetText("--- Все проекты ---")
 			} else {
-				task := projects[id-1]
-				label := obj.(*fyne.Container).Objects[1].(*widget.Label)
-				label.SetText(task.Title)
+				projects, _ := s.service.GetProjects()
+				if id-1 < len(projects) {
+					task := projects[id-1]
+					label := obj.(*fyne.Container).Objects[1].(*widget.Label)
+					label.SetText(task.Title)
+				}
 			}
 		},
 	)
@@ -133,7 +133,9 @@ func (s *ProjectsScreen) createProjectList() *widget.List {
 			s.selectedID = ""
 		} else {
 			projects, _ := s.service.GetProjects()
-			s.selectedID = projects[id-1].ID
+			if id-1 < len(projects) {
+				s.selectedID = projects[id-1].ID
+			}
 		}
 		s.updateTasksForSelected()
 	}
@@ -143,13 +145,14 @@ func (s *ProjectsScreen) createProjectList() *widget.List {
 
 func (s *ProjectsScreen) updateTasksForSelected() {
 	if s.selectedID == "" {
-		// ���������� ��� ������� ��� �����
-		s.currentTasks.Hide()
+		if s.currentTasks != nil {
+			s.currentTasks.Hide()
+		}
 		return
 	}
 
 	project, _ := s.service.GetTask(s.selectedID)
-	if project != nil {
+	if project != nil && s.currentTasks != nil {
 		s.currentTasks.Show()
 		s.tasks = project.Subtasks
 		s.currentTasks.Refresh()
@@ -157,47 +160,55 @@ func (s *ProjectsScreen) updateTasksForSelected() {
 }
 
 func (s *ProjectsScreen) refreshProjectList() {
-	s.projectList.Refresh()
+	if s.projectList != nil {
+		s.projectList.Refresh()
+	}
+}
+
+func (s *ProjectsScreen) refreshList() {
+	s.refreshProjectList()
+	s.updateTasksForSelected()
 }
 
 func (s *ProjectsScreen) showNewProjectDialog() {
 	entry := widget.NewEntry()
-	entry.SetPlaceHolder("�������� �������")
+	entry.SetPlaceHolder("Название проекта")
 
-	dialog.ShowCustomConfirm("����� ������", "�������", "������",
-		container.NewVBox(
-			widget.NewLabel("������� �������� �������:"),
-			entry,
-		),
-		func(confirm bool) {
-			if confirm && entry.Text != "" {
+	content := container.NewVBox(
+		widget.NewLabel("Введите название проекта:"),
+		entry,
+		widget.NewButton("Создать", func() {
+			if entry.Text != "" {
 				s.service.AddToInbox(entry.Text, "")
 				s.refreshProjectList()
 			}
-		},
-		s.window,
+		}),
 	)
+
+	dialog.ShowCustom("Новый проект", "Отмена", content, s.window)
 }
 
 func (s *ProjectsScreen) showAddSubtaskDialog(projectID string) {
 	entry := widget.NewEntry()
-	entry.SetPlaceHolder("�������� ���������")
+	entry.SetPlaceHolder("Название подзадачи")
 
-	dialog.ShowCustomConfirm("����� ���������", "��������", "������",
-		container.NewVBox(
-			widget.NewLabel("������� �������� ���������:"),
-			entry,
-		),
-		func(confirm bool) {
-			if confirm && entry.Text != "" {
+	content := container.NewVBox(
+		widget.NewLabel("Введите название подзадачи:"),
+		entry,
+		widget.NewButton("Добавить", func() {
+			if entry.Text != "" {
 				s.service.AddSubtask(projectID, entry.Text)
 				s.updateTasksForSelected()
 			}
-		},
-		s.window,
+		}),
 	)
+
+	dialog.ShowCustom("Новая подзадача", "Отмена", content, s.window)
 }
 
 func (s *ProjectsScreen) showTaskActionsInProject(taskID string) {
-	s.showTaskActions(taskID)
+	task, _ := s.service.GetTask(taskID)
+	if task != nil {
+		s.showTaskActions(task)
+	}
 }
