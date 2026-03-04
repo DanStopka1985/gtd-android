@@ -30,7 +30,7 @@ type Data struct {
 func main() {
 	myApp := app.New()
 	myWindow := myApp.NewWindow("GTD Organizer")
-	myWindow.Resize(fyne.NewSize(400, 600))
+	myWindow.Resize(fyne.NewSize(500, 600))
 
 	// Загружаем данные
 	dataDir, _ := os.UserCacheDir()
@@ -85,7 +85,7 @@ func main() {
 		}
 	}
 
-	// Список задач с иконками
+	// Список задач
 	taskList := widget.NewList(
 		func() int {
 			switch currentView {
@@ -202,7 +202,7 @@ func main() {
 
 	inputRow := container.NewBorder(nil, nil, nil, addBtn, input)
 
-	// Кнопки навигации
+	// Кнопки навигации вертикальным столбиком
 	inboxBtn := widget.NewButtonWithIcon("Входящие", theme.MailComposeIcon(), func() {
 		currentView = "inbox"
 		taskList.Refresh()
@@ -237,29 +237,38 @@ func main() {
 		updateCounter()
 	})
 
-	navBar := container.NewGridWithColumns(4, inboxBtn, projectsBtn, completedBtn, trashBtn)
-
-	// Верхняя панель
-	header := container.NewVBox(
-		title,
-		container.NewHBox(
-			widget.NewLabel(""),
-			counter,
-			widget.NewLabel(""),
-		),
+	// Вертикальная панель навигации слева
+	navBar := container.NewVBox(
+		inboxBtn,
+		projectsBtn,
+		completedBtn,
+		trashBtn,
 	)
 
-	content := container.NewBorder(
-		container.NewVBox(header, navBar, inputRow),
+	// Основной контент справа
+	mainContent := container.NewBorder(
+		container.NewVBox(
+			title,
+			counter,
+			inputRow,
+		),
 		nil, nil, nil,
 		container.NewScroll(taskList),
 	)
 
+	// Разделитель
+	split := container.NewHSplit(
+		navBar,
+		mainContent,
+	)
+	split.Offset = 0.2 // 20% на навигацию, 80% на контент
+
 	updateCounter()
-	myWindow.SetContent(content)
+	myWindow.SetContent(split)
 	myWindow.ShowAndRun()
 }
 
+// Все функции с модальными окнами, которые автоматически закрываются после действия
 func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
 		widget.NewButtonWithIcon("📁 В проект", theme.FolderIcon(), func() {
@@ -393,10 +402,8 @@ func showSubtasks(project *Task, window fyne.Window, onRefresh func()) {
 	} else {
 		for i, subtask := range project.Subtasks {
 			index := i
-			// Строка подзадачи с кнопкой выполнения
 			row := container.NewHBox(
 				widget.NewButtonWithIcon("⬜", theme.ConfirmIcon(), func() {
-					// Отмечаем подзадачу выполненной
 					project.Subtasks = append(project.Subtasks[:index], project.Subtasks[index+1:]...)
 					onRefresh()
 				}),
