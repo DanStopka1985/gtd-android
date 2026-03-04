@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -28,21 +29,41 @@ type Data struct {
 }
 
 func main() {
+	// Для отладки
+	f, err := os.Create("/sdcard/gtd_debug.log")
+	if err == nil {
+		log.SetOutput(f)
+	}
+	log.Println("=== GTD App Started ===")
+
 	myApp := app.New()
 	myWindow := myApp.NewWindow("GTD Organizer")
 	myWindow.Resize(fyne.NewSize(500, 600))
 
 	// Загружаем данные
-	dataDir, _ := os.UserCacheDir()
+	dataDir, err := os.UserCacheDir()
+	if err != nil {
+		log.Println("Error getting cache dir:", err)
+		dataDir = os.TempDir()
+	}
 	dataDir = filepath.Join(dataDir, "gtd-data")
 	os.MkdirAll(dataDir, 0755)
 	dataFile := filepath.Join(dataDir, "tasks.json")
+	log.Println("Data file:", dataFile)
 
 	data := &Data{}
 
+	// Читаем существующие данные
 	if file, err := os.ReadFile(dataFile); err == nil {
-		json.Unmarshal(file, data)
+		err = json.Unmarshal(file, data)
+		if err != nil {
+			log.Println("Error parsing JSON:", err)
+		} else {
+			log.Printf("Loaded: Inbox=%d, Projects=%d, Completed=%d, Trash=%d",
+				len(data.Inbox), len(data.Projects), len(data.Completed), len(data.Trash))
+		}
 	} else {
+		log.Println("No existing data, creating test data")
 		data.Inbox = []Task{
 			{Title: "Купить продукты", Done: false},
 			{Title: "Сделать зарядку", Done: false},
@@ -58,11 +79,8 @@ func main() {
 				},
 			},
 		}
-	}
-
-	saveData := func() {
-		jsonData, _ := json.MarshalIndent(data, "", "  ")
-		os.WriteFile(dataFile, jsonData, 0644)
+		// Сразу сохраняем тестовые данные
+		saveDataToFile(dataFile, data)
 	}
 
 	currentView := "inbox"
@@ -129,32 +147,23 @@ func main() {
 		},
 	)
 
+	// Общая функция обновления
+	refreshAll := func() {
+		saveDataToFile(dataFile, data)
+		taskList.Refresh()
+		updateCounter()
+	}
+
 	taskList.OnSelected = func(id widget.ListItemID) {
 		switch currentView {
 		case "inbox":
-			showInboxActions(&data.Inbox[id], data, id, myWindow, func() {
-				saveData()
-				taskList.Refresh()
-				updateCounter()
-			})
+			showInboxActions(&data.Inbox[id], data, id, myWindow, refreshAll)
 		case "projects":
-			showProjectActions(&data.Projects[id], data, id, myWindow, func() {
-				saveData()
-				taskList.Refresh()
-				updateCounter()
-			})
+			showProjectActions(&data.Projects[id], data, id, myWindow, refreshAll)
 		case "completed":
-			showCompletedActions(&data.Completed[id], data, id, myWindow, func() {
-				saveData()
-				taskList.Refresh()
-				updateCounter()
-			})
+			showCompletedActions(&data.Completed[id], data, id, myWindow, refreshAll)
 		case "trash":
-			showTrashActions(&data.Trash[id], data, id, myWindow, func() {
-				saveData()
-				taskList.Refresh()
-				updateCounter()
-			})
+			showTrashActions(&data.Trash[id], data, id, myWindow, refreshAll)
 		}
 		taskList.UnselectAll()
 	}
@@ -167,16 +176,12 @@ func main() {
 			switch currentView {
 			case "inbox":
 				data.Inbox = append(data.Inbox, Task{Title: text, Done: false})
-				saveData()
+				refreshAll()
 				input.SetText("")
-				taskList.Refresh()
-				updateCounter()
 			case "projects":
 				data.Projects = append(data.Projects, Task{Title: text, Done: false, Subtasks: []Task{}})
-				saveData()
+				refreshAll()
 				input.SetText("")
-				taskList.Refresh()
-				updateCounter()
 			}
 		}
 	}
@@ -186,23 +191,19 @@ func main() {
 			switch currentView {
 			case "inbox":
 				data.Inbox = append(data.Inbox, Task{Title: input.Text, Done: false})
-				saveData()
+				refreshAll()
 				input.SetText("")
-				taskList.Refresh()
-				updateCounter()
 			case "projects":
 				data.Projects = append(data.Projects, Task{Title: input.Text, Done: false, Subtasks: []Task{}})
-				saveData()
+				refreshAll()
 				input.SetText("")
-				taskList.Refresh()
-				updateCounter()
 			}
 		}
 	})
 
 	inputRow := container.NewBorder(nil, nil, nil, addBtn, input)
 
-	// Кнопки навигации вертикальным столбиком
+	// Кнопки навигации
 	inboxBtn := widget.NewButtonWithIcon("Входящие", theme.MailComposeIcon(), func() {
 		currentView = "inbox"
 		taskList.Refresh()
@@ -237,7 +238,6 @@ func main() {
 		updateCounter()
 	})
 
-	// Вертикальная панель навигации слева
 	navBar := container.NewVBox(
 		inboxBtn,
 		projectsBtn,
@@ -245,7 +245,6 @@ func main() {
 		trashBtn,
 	)
 
-	// Основной контент справа
 	mainContent := container.NewBorder(
 		container.NewVBox(
 			title,
@@ -256,22 +255,36 @@ func main() {
 		container.NewScroll(taskList),
 	)
 
-	// Разделитель
 	split := container.NewHSplit(
 		navBar,
 		mainContent,
 	)
-	split.Offset = 0.2 // 20% на навигацию, 80% на контент
+	split.Offset = 0.2
 
 	updateCounter()
 	myWindow.SetContent(split)
 	myWindow.ShowAndRun()
 }
 
+// Функция сохранения данных в файл
+func saveDataToFile(file string, data *Data) {
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		log.Println("Error marshaling JSON:", err)
+		return
+	}
+	err = os.WriteFile(file, jsonData, 0644)
+	if err != nil {
+		log.Println("Error writing file:", err)
+	} else {
+		log.Printf("Saved: Inbox=%d, Projects=%d, Completed=%d, Trash=%d",
+			len(data.Inbox), len(data.Projects), len(data.Completed), len(data.Trash))
+	}
+}
+
 func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
 		widget.NewButtonWithIcon("📁 В проект", theme.FolderIcon(), func() {
-			// Закрываем текущую модалку перед открытием следующей
 			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 			showProjectSelect(task, data, index, window, onRefresh)
 		}),
@@ -418,7 +431,6 @@ func showSubtasks(project *Task, window fyne.Window, onRefresh func()) {
 				widget.NewButtonWithIcon("⬜", theme.ConfirmIcon(), func() {
 					project.Subtasks = append(project.Subtasks[:index], project.Subtasks[index+1:]...)
 					onRefresh()
-					// Обновляем содержимое диалога
 					window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 					showSubtasks(project, window, onRefresh)
 				}),
@@ -435,7 +447,6 @@ func showSubtasks(project *Task, window fyne.Window, onRefresh func()) {
 		if entry.Text != "" {
 			project.Subtasks = append(project.Subtasks, Task{Title: entry.Text, Done: false})
 			onRefresh()
-			// Обновляем содержимое диалога
 			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 			showSubtasks(project, window, onRefresh)
 		}
