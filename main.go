@@ -46,6 +46,17 @@ func main() {
 		data.Inbox = []Task{
 			{Title: "Купить продукты", Done: false},
 			{Title: "Сделать зарядку", Done: false},
+			{Title: "Позвонить маме", Done: false},
+		}
+		data.Projects = []Task{
+			{
+				Title: "Учеба",
+				Done:  false,
+				Subtasks: []Task{
+					{Title: "Прочитать главу 5", Done: false},
+					{Title: "Сделать конспект", Done: false},
+				},
+			},
 		}
 	}
 
@@ -132,6 +143,18 @@ func main() {
 				taskList.Refresh()
 				updateCounter()
 			})
+		case "completed":
+			showCompletedActions(&data.Completed[id], data, id, myWindow, func() {
+				saveData()
+				taskList.Refresh()
+				updateCounter()
+			})
+		case "trash":
+			showTrashActions(&data.Trash[id], data, id, myWindow, func() {
+				saveData()
+				taskList.Refresh()
+				updateCounter()
+			})
 		}
 		taskList.UnselectAll()
 	}
@@ -140,22 +163,40 @@ func main() {
 	input := widget.NewEntry()
 	input.SetPlaceHolder("➕ Новая задача...")
 	input.OnSubmitted = func(text string) {
-		if text != "" && currentView == "inbox" {
-			data.Inbox = append(data.Inbox, Task{Title: text, Done: false})
-			saveData()
-			input.SetText("")
-			taskList.Refresh()
-			updateCounter()
+		if text != "" {
+			switch currentView {
+			case "inbox":
+				data.Inbox = append(data.Inbox, Task{Title: text, Done: false})
+				saveData()
+				input.SetText("")
+				taskList.Refresh()
+				updateCounter()
+			case "projects":
+				data.Projects = append(data.Projects, Task{Title: text, Done: false, Subtasks: []Task{}})
+				saveData()
+				input.SetText("")
+				taskList.Refresh()
+				updateCounter()
+			}
 		}
 	}
 
 	addBtn := widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-		if input.Text != "" && currentView == "inbox" {
-			data.Inbox = append(data.Inbox, Task{Title: input.Text, Done: false})
-			saveData()
-			input.SetText("")
-			taskList.Refresh()
-			updateCounter()
+		if input.Text != "" {
+			switch currentView {
+			case "inbox":
+				data.Inbox = append(data.Inbox, Task{Title: input.Text, Done: false})
+				saveData()
+				input.SetText("")
+				taskList.Refresh()
+				updateCounter()
+			case "projects":
+				data.Projects = append(data.Projects, Task{Title: input.Text, Done: false, Subtasks: []Task{}})
+				saveData()
+				input.SetText("")
+				taskList.Refresh()
+				updateCounter()
+			}
 		}
 	})
 
@@ -167,14 +208,16 @@ func main() {
 		taskList.Refresh()
 		input.Show()
 		addBtn.Show()
+		input.SetPlaceHolder("➕ Новая задача...")
 		updateCounter()
 	})
 
 	projectsBtn := widget.NewButtonWithIcon("Проекты", theme.FolderIcon(), func() {
 		currentView = "projects"
 		taskList.Refresh()
-		input.Hide()
-		addBtn.Hide()
+		input.Show()
+		addBtn.Show()
+		input.SetPlaceHolder("➕ Новый проект...")
 		updateCounter()
 	})
 
@@ -217,7 +260,6 @@ func main() {
 	myWindow.ShowAndRun()
 }
 
-// Все функции действий остаются без изменений
 func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
 		widget.NewButtonWithIcon("📁 В проект", theme.FolderIcon(), func() {
@@ -253,6 +295,46 @@ func showProjectActions(project *Task, data *Data, index int, window fyne.Window
 		widget.NewButtonWithIcon("🗑 Удалить", theme.DeleteIcon(), func() {
 			data.Trash = append(data.Trash, *project)
 			data.Projects = append(data.Projects[:index], data.Projects[index+1:]...)
+			onRefresh()
+		}),
+	)
+
+	dialog.ShowCustom("Действия", "Закрыть", actions, window)
+}
+
+func showCompletedActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
+	actions := container.NewVBox(
+		widget.NewButtonWithIcon("↩ Вернуть", theme.ViewRestoreIcon(), func() {
+			task.Done = false
+			data.Inbox = append(data.Inbox, *task)
+			data.Completed = append(data.Completed[:index], data.Completed[index+1:]...)
+			onRefresh()
+		}),
+		widget.NewButtonWithIcon("🗑 Удалить", theme.DeleteIcon(), func() {
+			data.Trash = append(data.Trash, *task)
+			data.Completed = append(data.Completed[:index], data.Completed[index+1:]...)
+			onRefresh()
+		}),
+	)
+
+	dialog.ShowCustom("Действия", "Закрыть", actions, window)
+}
+
+func showTrashActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
+	actions := container.NewVBox(
+		widget.NewButtonWithIcon("↩ Восстановить", theme.ViewRestoreIcon(), func() {
+			if task.Done {
+				data.Completed = append(data.Completed, *task)
+			} else if len(task.Subtasks) > 0 {
+				data.Projects = append(data.Projects, *task)
+			} else {
+				data.Inbox = append(data.Inbox, *task)
+			}
+			data.Trash = append(data.Trash[:index], data.Trash[index+1:]...)
+			onRefresh()
+		}),
+		widget.NewButtonWithIcon("❌ Удалить навсегда", theme.DeleteIcon(), func() {
+			data.Trash = append(data.Trash[:index], data.Trash[index+1:]...)
 			onRefresh()
 		}),
 	)
@@ -309,8 +391,18 @@ func showSubtasks(project *Task, window fyne.Window, onRefresh func()) {
 	if len(project.Subtasks) == 0 {
 		content.Add(widget.NewLabel("Нет подзадач"))
 	} else {
-		for _, subtask := range project.Subtasks {
-			content.Add(widget.NewLabel("  • " + subtask.Title))
+		for i, subtask := range project.Subtasks {
+			index := i
+			// Строка подзадачи с кнопкой выполнения
+			row := container.NewHBox(
+				widget.NewButtonWithIcon("⬜", theme.ConfirmIcon(), func() {
+					// Отмечаем подзадачу выполненной
+					project.Subtasks = append(project.Subtasks[:index], project.Subtasks[index+1:]...)
+					onRefresh()
+				}),
+				widget.NewLabel(subtask.Title),
+			)
+			content.Add(row)
 		}
 	}
 
