@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -38,7 +39,7 @@ func main() {
 
 	myApp := app.New()
 	myWindow := myApp.NewWindow("GTD Organizer")
-	myWindow.Resize(fyne.NewSize(500, 600))
+	myWindow.Resize(fyne.NewSize(500, 700))
 
 	// Загружаем данные
 	dataDir, err := os.UserCacheDir()
@@ -87,6 +88,37 @@ func main() {
 
 	// Заголовок
 	title := widget.NewLabelWithStyle("GTD Organizer", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+
+	// Информация о файле
+	fileInfo := widget.NewLabel("")
+	fileInfo.TextStyle = fyne.TextStyle{Italic: true}
+
+	// Функция обновления информации о файле
+	updateFileInfo := func() {
+		if file, err := os.Stat(dataFile); err == nil {
+			fileInfo.SetText(fmt.Sprintf("💾 %s (%d KB) 📅 %s",
+				filepath.Base(dataFile),
+				file.Size()/1024,
+				file.ModTime().Format("02.01.2006 15:04")))
+		} else {
+			fileInfo.SetText(fmt.Sprintf("💾 %s", filepath.Base(dataFile)))
+		}
+	}
+	updateFileInfo()
+
+	// Кнопки для работы с файлом
+	shareBtn := widget.NewButtonWithIcon("Поделиться", theme.MailSendIcon(), func() {
+		shareData(dataFile, myWindow)
+	})
+
+	loadBtn := widget.NewButtonWithIcon("Загрузить", theme.FolderOpenIcon(), func() {
+		loadData(dataFile, data, myWindow, func() {
+			saveDataToFile(dataFile, data)
+			updateFileInfo()
+		})
+	})
+
+	fileActions := container.NewHBox(shareBtn, loadBtn)
 
 	// Счетчик задач
 	counter := widget.NewLabel("")
@@ -152,6 +184,7 @@ func main() {
 		saveDataToFile(dataFile, data)
 		taskList.Refresh()
 		updateCounter()
+		updateFileInfo()
 	}
 
 	taskList.OnSelected = func(id widget.ListItemID) {
@@ -245,12 +278,17 @@ func main() {
 		trashBtn,
 	)
 
+	// Верхняя панель с информацией
+	topPanel := container.NewVBox(
+		title,
+		fileInfo,
+		fileActions,
+		counter,
+		inputRow,
+	)
+
 	mainContent := container.NewBorder(
-		container.NewVBox(
-			title,
-			counter,
-			inputRow,
-		),
+		topPanel,
 		nil, nil, nil,
 		container.NewScroll(taskList),
 	)
@@ -282,6 +320,78 @@ func saveDataToFile(file string, data *Data) {
 	}
 }
 
+// Функция для отправки файла
+func shareData(file string, window fyne.Window) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		dialog.ShowError(err, window)
+		return
+	}
+
+	// Создаем временный файл для отправки
+	tempDir := os.TempDir()
+	tempFile := filepath.Join(tempDir, fmt.Sprintf("gtd_backup_%d.json", time.Now().Unix()))
+	err = os.WriteFile(tempFile, data, 0644)
+	if err != nil {
+		dialog.ShowError(err, window)
+		return
+	}
+
+	// Открываем диалог сохранения
+	dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
+		if err != nil || writer == nil {
+			return
+		}
+		defer writer.Close()
+
+		// Копируем данные
+		_, err = writer.Write(data)
+		if err != nil {
+			dialog.ShowError(err, window)
+		} else {
+			dialog.ShowInformation("Успех", "Файл сохранен", window)
+		}
+	}, window)
+}
+
+// Функция для загрузки данных из файла
+func loadData(dataFile string, data *Data, window fyne.Window, onLoaded func()) {
+	dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+		if err != nil {
+			dialog.ShowError(err, window)
+			return
+		}
+		if reader == nil {
+			return
+		}
+		defer reader.Close()
+
+		// Читаем данные из выбранного файла
+		newData := &Data{}
+		err = json.NewDecoder(reader).Decode(newData)
+		if err != nil {
+			dialog.ShowError(err, window)
+			return
+		}
+
+		// Спрашиваем подтверждение
+		dialog.ShowConfirm("Загрузить данные",
+			"Текущие данные будут заменены. Продолжить?",
+			func(confirm bool) {
+				if confirm {
+					// Заменяем данные
+					*data = *newData
+					// Сохраняем в основной файл
+					saveDataToFile(dataFile, data)
+					onLoaded()
+					dialog.ShowInformation("Успех", "Данные загружены", window)
+				}
+			},
+			window)
+	}, window)
+}
+
+// ... остальные функции без изменений ...
 func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
 		widget.NewButtonWithIcon("📁 В проект", theme.FolderIcon(), func() {
