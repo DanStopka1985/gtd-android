@@ -268,10 +268,11 @@ func main() {
 	myWindow.ShowAndRun()
 }
 
-// Все функции с модальными окнами, которые автоматически закрываются после действия
 func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
 		widget.NewButtonWithIcon("📁 В проект", theme.FolderIcon(), func() {
+			// Закрываем текущую модалку перед открытием следующей
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 			showProjectSelect(task, data, index, window, onRefresh)
 		}),
 		widget.NewButtonWithIcon("✅ Выполнено", theme.ConfirmIcon(), func() {
@@ -279,11 +280,13 @@ func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onR
 			data.Completed = append(data.Completed, *task)
 			data.Inbox = append(data.Inbox[:index], data.Inbox[index+1:]...)
 			onRefresh()
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 		}),
 		widget.NewButtonWithIcon("🗑 Удалить", theme.DeleteIcon(), func() {
 			data.Trash = append(data.Trash, *task)
 			data.Inbox = append(data.Inbox[:index], data.Inbox[index+1:]...)
 			onRefresh()
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 		}),
 	)
 
@@ -293,6 +296,7 @@ func showInboxActions(task *Task, data *Data, index int, window fyne.Window, onR
 func showProjectActions(project *Task, data *Data, index int, window fyne.Window, onRefresh func()) {
 	actions := container.NewVBox(
 		widget.NewButtonWithIcon("📋 Подзадачи", theme.ListIcon(), func() {
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 			showSubtasks(project, window, onRefresh)
 		}),
 		widget.NewButtonWithIcon("✅ Выполнено", theme.ConfirmIcon(), func() {
@@ -300,11 +304,13 @@ func showProjectActions(project *Task, data *Data, index int, window fyne.Window
 			data.Completed = append(data.Completed, *project)
 			data.Projects = append(data.Projects[:index], data.Projects[index+1:]...)
 			onRefresh()
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 		}),
 		widget.NewButtonWithIcon("🗑 Удалить", theme.DeleteIcon(), func() {
 			data.Trash = append(data.Trash, *project)
 			data.Projects = append(data.Projects[:index], data.Projects[index+1:]...)
 			onRefresh()
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 		}),
 	)
 
@@ -318,11 +324,13 @@ func showCompletedActions(task *Task, data *Data, index int, window fyne.Window,
 			data.Inbox = append(data.Inbox, *task)
 			data.Completed = append(data.Completed[:index], data.Completed[index+1:]...)
 			onRefresh()
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 		}),
 		widget.NewButtonWithIcon("🗑 Удалить", theme.DeleteIcon(), func() {
 			data.Trash = append(data.Trash, *task)
 			data.Completed = append(data.Completed[:index], data.Completed[index+1:]...)
 			onRefresh()
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 		}),
 	)
 
@@ -341,10 +349,12 @@ func showTrashActions(task *Task, data *Data, index int, window fyne.Window, onR
 			}
 			data.Trash = append(data.Trash[:index], data.Trash[index+1:]...)
 			onRefresh()
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 		}),
 		widget.NewButtonWithIcon("❌ Удалить навсегда", theme.DeleteIcon(), func() {
 			data.Trash = append(data.Trash[:index], data.Trash[index+1:]...)
 			onRefresh()
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 		}),
 	)
 
@@ -376,12 +386,14 @@ func showProjectSelect(task *Task, data *Data, index int, window fyne.Window, on
 				data.Projects = append(data.Projects, newProject)
 				data.Inbox = append(data.Inbox[:index], data.Inbox[index+1:]...)
 				onRefresh()
+				window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 			} else {
 				for i, p := range data.Projects {
 					if p.Title == selected {
 						data.Projects[i].Subtasks = append(data.Projects[i].Subtasks, *task)
 						data.Inbox = append(data.Inbox[:index], data.Inbox[index+1:]...)
 						onRefresh()
+						window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
 						break
 					}
 				}
@@ -406,6 +418,9 @@ func showSubtasks(project *Task, window fyne.Window, onRefresh func()) {
 				widget.NewButtonWithIcon("⬜", theme.ConfirmIcon(), func() {
 					project.Subtasks = append(project.Subtasks[:index], project.Subtasks[index+1:]...)
 					onRefresh()
+					// Обновляем содержимое диалога
+					window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
+					showSubtasks(project, window, onRefresh)
 				}),
 				widget.NewLabel(subtask.Title),
 			)
@@ -420,6 +435,9 @@ func showSubtasks(project *Task, window fyne.Window, onRefresh func()) {
 		if entry.Text != "" {
 			project.Subtasks = append(project.Subtasks, Task{Title: entry.Text, Done: false})
 			onRefresh()
+			// Обновляем содержимое диалога
+			window.Canvas().Overlays().Remove(window.Canvas().Overlays().Top())
+			showSubtasks(project, window, onRefresh)
 		}
 	})
 
